@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FPS Game</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #222;
+      cursor: none;
+    }
+    canvas {
+      display: block;
+      border: 5px solid limegreen;
+    }
+    #crosshair {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background: transparent;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: white;
+    }
+    #crosshair::before {
+      left: 50%;
+      top: 0;
+      width: 2px;
+      height: 100%;
+      transform: translateX(-50%);
+    }
+    #crosshair::after {
+      top: 50%;
+      left: 0;
+      height: 2px;
+      width: 100%;
+      transform: translateY(-50%);
+    }
+    #waveCounter, #highscore {
+      position: absolute;
+      top: 10px;
+      color: white;
+      font-size: 24px;
+      z-index: 10;
+      font-family: sans-serif;
+    }
+    #waveCounter {
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    #highscore {
+      left: calc(50% + 100px);
+    }
+    #healthBar, #bossHealthBar {
+      position: absolute;
+      height: 20px;
+      background: darkred;
+      border: 2px solid #fff;
+    }
+    #healthBar {
+      top: 50px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 200px;
+    }
+    #bossHealthBar {
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 300px;
+      display: none;
+    }
+    #healthFill, #bossHealthFill {
+      height: 100%;
+      background: limegreen;
+    }
+    #gameOverScreen {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 36px;
+      font-family: sans-serif;
+      text-align: center;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="crosshair"></div>
+  <div id="waveCounter">Wave: 1</div>
+  <div id="highscore">Highscore: 0</div>
+  <div id="healthBar"><div id="healthFill"></div></div>
+  <div id="bossHealthBar"><div id="bossHealthFill"></div></div>
+  <div id="gameOverScreen">Game Over! Press F to Restart</div>
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const crosshair = document.getElementById('crosshair');
+    const waveCounter = document.getElementById('waveCounter');
+    const highscoreCounter = document.getElementById('highscore');
+    const healthFill = document.getElementById('healthFill');
+    const bossHealthBar = document.getElementById('bossHealthBar');
+    const bossHealthFill = document.getElementById('bossHealthFill');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+
+    let highscore = 0;
+
+    let player = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      speed: 5,
+      angle: 0,
+      size: 20,
+      health: 100,
+      maxHealth: 100
+    };
+
+    let keys = {};
+    window.addEventListener('keydown', (e) => keys[e.key] = true);
+    window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+    let mouseX = canvas.width / 2, mouseY = canvas.height / 2;
+
+    document.addEventListener('mousemove', (e) => {
+      mouseX += e.movementX;
+      mouseY += e.movementY;
+      crosshair.style.left = `${mouseX}px`;
+      crosshair.style.top = `${mouseY}px`;
+    });
+
+    class Enemy {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.size = 40;
+        this.color = 'red';
+        this.speed = 1 + Math.random();
+        this.health = 3;
+        this.maxHealth = 3;
+      }
+      draw() {
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+        ctx.fillStyle = 'green';
+        ctx.fillRect(this.x, this.y - 10, (this.health / this.maxHealth) * this.size, 5);
+      }
+      update() {
+        let dx = player.x - this.x;
+        let dy = player.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist > 1) {
+          this.x += dx / dist * this.speed;
+          this.y += dy / dist * this.speed;
+        }
+        if (dist < this.size / 2 + player.size / 2) {
+          player.health -= 0.5;
+        }
+      }
+      isHit(x, y) {
+        return x >= this.x && x <= this.x + this.size && y >= this.y && y <= this.y + this.size;
+      }
+    }
+
+    class FastEnemy extends Enemy {
+      constructor(x, y) {
+        super(x, y);
+        this.size = 30;
+        this.color = 'orange';
+        this.speed = 2 + Math.random();
+        this.health = 2;
+        this.maxHealth = 2;
+      }
+      update() {
+        super.update();
+        if (Math.random() < 0.05) {
+          let dx = player.x - this.x;
+          let dy = player.y - this.y;
+          let dist = Math.hypot(dx, dy);
+          if (dist > 1) {
+            this.x += dx / dist * this.speed * 2;
+            this.y += dy / dist * this.speed * 2;
+          }
+        }
+      }
+    }
+
+    class BlueEnemy extends Enemy {
+      constructor(x, y) {
+        super(x, y);
+        this.size = 40;
+        this.color = 'green';
+        this.health = 5;
+        this.maxHealth = 5;
+        this.shield = 2;
+      }
+      update() {
+        super.update();
+        if (this.health < 5) {
+          this.health += 0.075;
+        }
+      }
+      draw() {
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+        ctx.fillStyle = 'green';
+        ctx.fillRect(this.x, this.y - 10, (this.health / this.maxHealth) * this.size, 5);
+        ctx.fillStyle = 'blue';
+        ctx.fillRect(this.x, this.y - 15, (this.shield / 5) * this.size, 5);
+      }
+    }
+
+    class Boss extends Enemy {
+      constructor(x, y) {
+        super(x, y);
+        this.size = 60;
+        this.color = 'purple';
+        this.health = 200;
+        this.maxHealth = 200;
+        this.speed = 0.5;
+      }
+      update() {
+        super.update();
+        let dx = player.x - this.x;
+        let dy = player.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist < this.size / 2 + player.size / 2) {
+          player.health -= 1;
+        }
+      }
+    }
+
+    class Bullet {
+      constructor(x, y, angle) {
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.speed = 10;
+        this.radius = 5;
+      }
+      update() {
+        this.x += Math.cos(this.angle) * this.speed;
+        this.y += Math.sin(this.angle) * this.speed;
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'yellow';
+        ctx.fill();
+      }
+    }
+
+    let bullets = [];
+    let enemies = [];
+    let wave = 1;
+
+    function spawnEnemies(count) {
+      for (let i = 0; i < count; i++) {
+        let enemyType = Math.random() > 0.7 ? FastEnemy : Math.random() > 0.4 ? BlueEnemy : Enemy;
+        enemies.push(new enemyType(Math.random() * canvas.width, Math.random() * canvas.height));
+      }
+
+      let bossesToSpawn = Math.floor(wave / 10);
+      for (let i = 0; i < bossesToSpawn; i++) {
+        enemies.push(new Boss(Math.random() * canvas.width, Math.random() * canvas.height));
+      }
+    }
+
+    spawnEnemies(wave + 2);
+
+    function updatePlayer() {
+      if (keys['w']) player.y -= player.speed;
+      if (keys['s']) player.y += player.speed;
+      if (keys['a']) player.x -= player.speed;
+      if (keys['d']) player.x += player.speed;
+
+      player.x = Math.max(0, Math.min(canvas.width, player.x));
+      player.y = Math.max(0, Math.min(canvas.height, player.y));
+    }
+
+    function drawPlayer() {
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate(player.angle);
+      ctx.fillStyle = 'blue';
+      ctx.fillRect(-10, -10, 20, 20);
+      ctx.restore();
+    }
+
+    function draw() {
+      if (player.health <= 0) {
+        gameOverScreen.style.display = 'block';
+        highscore = Math.max(highscore, wave - 1);
+        highscoreCounter.textContent = `Highscore: ${highscore}`;
+        return;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      updatePlayer();
+      drawPlayer();
+
+      bullets.forEach((bullet, bIndex) => {
+        bullet.update();
+        bullet.draw();
+        if (
+          bullet.x < 0 || bullet.y < 0 ||
+          bullet.x > canvas.width || bullet.y > canvas.height
+        ) {
+          bullets.splice(bIndex, 1);
+        }
+      });
+
+      let boss = enemies.find(e => e instanceof Boss);
+      if (boss) {
+        bossHealthBar.style.display = "block";
+        bossHealthFill.style.width = `${(boss.health / boss.maxHealth) * 100}%`;
+      } else {
+        bossHealthBar.style.display = "none";
+      }
+
+      enemies.forEach((enemy, eIndex) => {
+        enemy.update();
+        enemy.draw();
+        bullets.forEach((bullet, bIndex) => {
+          if (enemy.isHit(bullet.x, bullet.y)) {
+            enemy.health--;
+            bullets.splice(bIndex, 1);
+            if (enemy.health <= 0) enemies.splice(eIndex, 1);
+          }
+        });
+      });
+
+      healthFill.style.width = `${(player.health / player.maxHealth) * 100}%`;
+
+      if (enemies.length === 0) {
+        wave++;
+        waveCounter.textContent = `Wave: ${wave}`;
+        player.health = player.maxHealth;
+        spawnEnemies(wave + 2);
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+
+    canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
+    canvas.addEventListener('click', () => {
+      canvas.requestPointerLock();
+      const dx = mouseX - player.x;
+      const dy = mouseY - player.y;
+      const angle = Math.atan2(dy, dx);
+      bullets.push(new Bullet(player.x, player.y, angle));
+    });
+
+    function lockChangeAlert() {
+      if (
+        document.pointerLockElement === canvas ||
+        document.mozPointerLockElement === canvas
+      ) {
+        document.addEventListener("mousemove", updateAngle, false);
+      } else {
+        document.removeEventListener("mousemove", updateAngle, false);
+      }
+    }
+
+    function updateAngle() {
+      const dx = mouseX - player.x;
+      const dy = mouseY - player.y;
+      player.angle = Math.atan2(dy, dx);
+    }
+
+    document.addEventListener('pointerlockchange', lockChangeAlert, false);
+    document.addEventListener('mozpointerlockchange', lockChangeAlert, false);
+
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      player.x = canvas.width / 2;
+      player.y = canvas.height / 2;
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'f') {
+        location.reload();
+      }
+    });
+  </script>
+</body>
+</html>
